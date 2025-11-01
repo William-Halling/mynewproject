@@ -2,15 +2,16 @@ using UnityEngine;
 
 public class InputManager : MonoBehaviour
 {
+
     public static InputManager Instance { get; private set; }
 
-    // Input values
-    public Vector2 MoveInput { get; private set; }
-    public Vector2 LookInput { get; private set; }
-    public bool InteractPressed { get; private set; }
-    public bool JumpPressed { get; private set; }
-    public bool SprintPressed { get; private set; }
-    public bool CrouchPressed { get; private set; }
+        // Input values
+    public Vector2 moveInput    { get; private set; }
+    public Vector2 lookInput    { get; private set; }
+    public bool isInteracting   { get; private set; }
+    public bool isJumping       { get; private set; }
+    public bool isSprinting     { get; private set; }
+    public bool isCrouching     { get; private set; }
 
 
     private void Awake()
@@ -18,14 +19,15 @@ public class InputManager : MonoBehaviour
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
+
             return;
         }
+
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
 
 
-        // Register with Service Locator
         if (ServiceLocator.Instance != null)
         {
             ServiceLocator.Instance.RegisterService(this);
@@ -35,16 +37,16 @@ public class InputManager : MonoBehaviour
 
     private void Update()
     {
-        // Read legacy input values
-        MoveInput = new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
-        LookInput = new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y"));
+            // Read legacy input values
+        moveInput = new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
+        lookInput = new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y"));
 
 
-        // Read button inputs
-        InteractPressed = Input.GetKeyDown(KeyCode.E);
-        JumpPressed = Input.GetKeyDown(KeyCode.Space);
-        SprintPressed = Input.GetKey(KeyCode.LeftShift);
-        CrouchPressed = Input.GetKey(KeyCode.LeftControl);
+            // Read button inputs
+        isInteracting = Input.GetKeyDown(KeyCode.E);
+        isJumping     = Input.GetKeyDown(KeyCode.Space);
+        isSprinting   = Input.GetKey(KeyCode.LeftShift);
+        isCrouching   = Input.GetKey(KeyCode.LeftControl);
 
 
             // Handle pause input - with null check
@@ -57,24 +59,24 @@ public class InputManager : MonoBehaviour
 
     public void EnableInput()
     {
-        // Enable cursor if needed
+            // Enable cursor if needed
         Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
-    }
 
+        Cursor.visible   = false;
+    }
 
 
     public void DisableInput()
     {
-        // Reset input values
-        MoveInput = Vector2.zero;
-        LookInput = Vector2.zero;
-        InteractPressed = false;
-        JumpPressed = false;
-        SprintPressed = false;
-        CrouchPressed = false;
+            // Reset input values
+        moveInput     = Vector2.zero;
+        lookInput     = Vector2.zero;
+        isInteracting = false;
+        isJumping     = false;
+        isSprinting   = false;
+        isCrouching   = false;
 
-        // Show cursor
+
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
