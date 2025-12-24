@@ -1,20 +1,25 @@
 ﻿using System;
-using System.IO;
-using Transporter.Data;
 using UnityEngine;
-
+using Transporter.Data;
 
 public sealed class SaveManager : MonoBehaviour
 {
     public static SaveManager Instance { get; private set; }
 
-
-        // Steam integration placeholder (wire up Steamworks.NET later)
+    [Header("Storage")]
     [SerializeField] private bool useSteamCloud = false;
-    private const uint STEAM_APP_ID = 0; // set your real AppID when ready
 
 
-        // Events
+        // file keys (inside storage root)
+    private const string INDEX_KEY = "save_index.json";
+
+        // local root directory
+    private string LocalRoot => System.IO.Path.Combine(Application.persistentDataPath, "saves");
+
+    private ISaveStorage storage;
+    private SaveIndex indexCache;
+
+
     public event Action<string> OnGameSaved;
     public event Action<string> OnGameLoaded;
 
@@ -23,181 +28,149 @@ public sealed class SaveManager : MonoBehaviour
     {
         if (Instance != null && Instance != this)
         {
-            Destroy(gameObject); 
-            
-            return; 
+            Destroy(gameObject);
+
+            return;
         }
+
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
 
-        ServiceLocator.Instance?.RegisterService(this);
+        storage = useSteamCloud ? (ISaveStorage) new SteamCloudStorage() : new LocalFileStorage(LocalRoot);
 
-            // Placeholder: decide if Steam Cloud should be used
-        useSteamCloud = CheckForSteam();
+        LoadIndex();
     }
 
 
-    private bool CheckForSteam()
+        // -------------------
+        // Public API (UI uses these)
+        // -------------------
+    public bool HasAnySave()
     {
-        // TODO: Replace with Steamworks.NET init check (e.g., SteamAPI.Init()).
-        // Return true if Steam is running + user logged in for this app.
-        return false;
+        return indexCache != null && indexCache.slots.Count > 0;
     }
 
 
-    // -------------------------------------------------------
-    // Public API
-    // -------------------------------------------------------
-
-    public bool HasSave(string slotName)
+    public bool HasSave(string slotId)
     {
-        string path = GetSavePath(slotName);
-
-        return System.IO.File.Exists(path);
+        return storage.Exists(SlotKey(slotId));
     }
 
 
-    public void SaveGame(string slotName)
+    public SaveIndex GetIndexSnapshot()
     {
-        var data = CreateSaveData();
+        var snap = new SaveIndex();
 
-        if (useSteamCloud)
-        { 
-            SaveToSteamCloud(data, slotName); // placeholder
-        }
-        else
-        { 
-            SaveLocally(data, slotName);
-        }
-
-        OnGameSaved?.Invoke(slotName);
-    }
-
-
-    public GameData LoadGame(string slotName)
-    {
-        GameData loaded = useSteamCloud
-            ? LoadFromSteamCloud(slotName) // placeholder
-            : LoadLocally(slotName);
-
-
-        if (loaded != null)
-        { 
-            OnGameLoaded?.Invoke(slotName);
-        }
-
-        return loaded;
-    }
-
-
-    public void DeleteSave(string slotName)
-    {
-        var path = GetSavePath(slotName);
-        
-
-        if (File.Exists(path))
+        foreach (var s in indexCache.slots)
         {
-            File.Delete(path);
-
-            Debug.Log($"[SaveManager] Deleted save: {slotName}");
+            snap.slots.Add(s);
         }
+
+        return snap;
     }
 
 
-        // -------------------------------------------------------
-        // Local (JSON) persistence
-        // -------------------------------------------------------
-
-    private void SaveLocally(GameData data, string slotName)
+    public SaveSlotMeta GetMeta(string slotId)
     {
-        try
-        {
-            var json = JsonUtility.ToJson(data, prettyPrint: true);
-            var path = GetSavePath(slotName);
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-
-
-            File.WriteAllText(path, json);
-            Debug.Log($"[SaveManager] Saved → {path}");
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"[SaveManager] Save failed: {e}");
-        }
+        return indexCache.Get(slotId);
     }
 
 
-    private GameData LoadLocally(string slotName)
+    public void DeleteSlot(string slotId)
     {
-        try
+        storage.Delete(SlotKey(slotId));
+        indexCache.Remove(slotId);
+
+        SaveIndexFile();
+    }
+
+
+    public void SaveSlot(string slotId, string displayName, GameData data)
+    {
+        if (data == null)
         {
-            var path = GetSavePath(slotName);
-
-            if (!File.Exists(path))
-            {
-                Debug.LogError($"[SaveManager] Save file not found: {path}");
-
-                return null;
-            }
-
-            var json = File.ReadAllText(path);
-            var data = JsonUtility.FromJson<GameData>(json);
-            Debug.Log($"[SaveManager] Loaded ← {slotName}");
-
-
-            return data;
+            Debug.LogError("[SaveManager] SaveSlot called with null GameData.");
+           
+            return;
         }
 
 
-        catch (Exception e)
-        {
-            Debug.LogError($"[SaveManager] Load failed: {e}");
+            // Write the full save
+        string json = JsonUtility.ToJson(data, true);
+        storage.WriteText(SlotKey(slotId), json);
 
+
+            // Update index metadata
+        var meta = SaveSlotMeta.FromGameData(slotId, displayName, data);
+        indexCache.Upsert(meta);
+        SaveIndexFile();
+
+
+        OnGameSaved?.Invoke(slotId);
+    }
+
+
+    public GameData LoadGameData(string slotId)
+    {
+        if (!storage.Exists(SlotKey(slotId)))
+        {
             return null;
         }
+        
+        string json = storage.ReadText(SlotKey(slotId));
+        
+
+        if (string.IsNullOrWhiteSpace(json))
+        { 
+            return null;
+        }
+
+        var data = JsonUtility.FromJson<GameData>(json);
+
+
+        return data;
     }
 
 
-    private static string GetSavePath(string slotName)
-    {
-            // Keep saves in a dedicated folder; JSON extension for clarity
-        return Path.Combine(UnityEngine.Application.persistentDataPath, $"saves/{slotName}.json");
-    }
+        // -------------------
+        // Internals
+        // -------------------
+    private string SlotKey(string slotId) => $"{slotId}.json";
 
 
-    private GameData CreateSaveData()
+    private void LoadIndex()
     {
-            // Minimal snapshot to match your current behavior.
-            // (We can hydrate from live systems later.)
-        return new GameData
+        indexCache = new SaveIndex();
+
+        if (!storage.Exists(INDEX_KEY))
         {
-            playerData = new PlayerData(),
-            worldData = new WorldData(),
-            saveTime = DateTime.Now,
-            version = UnityEngine.Application.version
-        };
+            SaveIndexFile();
+
+            return;
+        }
+
+        string json = storage.ReadText(INDEX_KEY);
+
+
+        if (!string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                indexCache = JsonUtility.FromJson<SaveIndex>(json) ?? new SaveIndex();
+            }
+            catch
+            {
+                indexCache = new SaveIndex();
+            }
+        }
     }
 
 
-        // -------------------------------------------------------
-        // Steam Cloud placeholders (safe no-ops for now)
-        // -------------------------------------------------------
-
-    private void SaveToSteamCloud(GameData data, string slotName)
+    private void SaveIndexFile()
     {
-        Debug.Log($"[SaveManager] (Steam Cloud placeholder) Would save '{slotName}' to Steam Cloud.");
+        string json = JsonUtility.ToJson(indexCache, true);
 
-            // Until Steamworks.NET is wired, still persist locally as a backup
-        SaveLocally(data, slotName);
-    }
-
-
-    private GameData LoadFromSteamCloud(string slotName)
-    {
-        Debug.Log($"[SaveManager] (Steam Cloud placeholder) Would load '{slotName}' from Steam Cloud.");
-
-            // Until Steamworks.NET is wired, fall back to local
-        return LoadLocally(slotName);
+        storage.WriteText(INDEX_KEY, json);
     }
 }

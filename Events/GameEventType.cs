@@ -9,20 +9,36 @@ public enum GameEventType
     GameStateChanged,
     SceneLoaded,
     SceneLoadStarted,
+
+
+    GameDataReady, // fired when loaded data should be applied to scene systems
+
+    
+    
+    SaveCompleted,
     SaveGameRequested,
+    LoadCompleted,
     LoadGameRequested,
 
-    // Input Events
+
+        // Input Events
     InputMove,
     InputInteract,
     InputPause,
 
+
+    ContractOffered,
+    ContractAccepted,
+    ContractCompleted,
+    ContractAbandoned,
+    ContractExpired
     // Player Events
-    PlayerHealthChanged,
-    PlayerMoneyChanged,
+    //PlayerHealthChanged,
+    //PlayerMoneyChanged,
+
 
     // Ship Events
-    ShipDamaged,
-    ShipRepaired,
-    ShipSunk,
+    //ShipDamaged,
+    //ShipRepaired,
+    //ShipSunk,
 }

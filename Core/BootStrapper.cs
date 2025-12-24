@@ -1,18 +1,25 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class Bootstrapper : MonoBehaviour
 {
-    [SerializeField] private GameEventBus eventSystemPrefab;
-    [SerializeField] private InputManager inputManagerPrefab;
-    [SerializeField] private GameManager gameManagerPrefab;
+    [Header("Optional Prefabs")]
+    [SerializeField] private GameObject gameEventBusPrefab;
+    [SerializeField] private GameObject inputManagerPrefab;
+    [SerializeField] private GameObject gameManagerPrefab;
+    [SerializeField] private GameObject saveManagerPrefab;
+    [SerializeField] private GameObject multiplayerControllerPrefab;
 
+    
+    [SerializeField] private GameObject sceneLoaderPrefab;
+    [SerializeField] private GameObject serviceLocatorPrefab;
+    
+
+    [Header("Config")]
+    [SerializeField] private bool loadMainMenu = true;
+    [SerializeField] private string mainMenuScene = "MainMenu";
 
     public static Bootstrapper Instance { get; private set; }
-
-
-    [Header("Configuration")]
-    [SerializeField] private bool loadMainMenu = true;
-    //[SerializeField] private string initialScene = "MainMenu";
 
 
     private void Awake()
@@ -20,129 +27,93 @@ public class Bootstrapper : MonoBehaviour
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
-
             return;
         }
 
-
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        Debug.Log("🔥 Bootstrapper Awake");
 
-        // Register with Service Locator
-        ServiceLocator.Instance.RegisterService(this);
+        EnsureServiceLocator();
+        EnsureCoreSystems();
+        RegisterServices();
     }
 
 
     private void Start()
     {
-        InitializeGame();
-    }
-
-
-    public void InitializeGame()
-    {
-        Debug.Log("Initializing game systems...");
-
-
-        // Ensure core systems exist
-        EnsureCoreSystems();
-
-
-        // Register all services
-        RegisterServices();
-
-
-        // Load initial scene
         if (loadMainMenu)
         {
-            //SceneLoader.Instance.LoadScene(initialScene);
-        }
+            Debug.Log("🔥 Loading Main Menu");
 
-        Debug.Log("Game initialization complete");
+            SceneLoader.Instance.LoadScene(mainMenuScene);
+        }
     }
 
 
+    // -----------------------------
+    // SERVICE LOCATOR
+    // -----------------------------
+    private void EnsureServiceLocator()
+    {
+        if (ServiceLocator.Instance != null)
+        {
+            return;
+        }
+
+        if (serviceLocatorPrefab != null)
+        {
+            Instantiate(serviceLocatorPrefab, transform);
+        }
+        else
+        {
+            var go = new GameObject("ServiceLocator");
+            go.AddComponent<ServiceLocator>();
+            go.transform.SetParent(transform);
+        }
+    }
+
+
+        // -----------------------------
+        // CORE SYSTEMS
+        // -----------------------------
     private void EnsureCoreSystems()
     {
-        if (GameEventBus.Instance == null)
-        {
-            if (eventSystemPrefab != null)
-            {
-                Instantiate(eventSystemPrefab, transform);
-            }
-
-            else
-            {
-                GameObject eventSystemObj = new GameObject("EventSystem");
-
-                eventSystemObj.AddComponent<GameEventBus>();
-                eventSystemObj.transform.SetParent(transform);
-            }
-        }
-
-
-        // InputManager
-        if (InputManager.Instance == null)
-        {
-            if (inputManagerPrefab != null)
-            {
-                Instantiate(inputManagerPrefab, transform);
-            }
-            else
-            {
-                GameObject inputManagerObj = new GameObject("InputManager");
-
-                inputManagerObj.AddComponent<InputManager>();
-                inputManagerObj.transform.SetParent(transform);
-            }
-        }
-
-
-        // GameManager
-        if (GameManager.Instance == null)
-        {
-            if (gameManagerPrefab != null)
-            {
-                Instantiate(gameManagerPrefab, transform);
-            }
-            else
-            {
-                GameObject gameManagerObj = new GameObject("GameManager");
-
-                gameManagerObj.AddComponent<GameManager>();
-                gameManagerObj.transform.SetParent(transform);
-            }
-        }
-        
-
-        // SaveManager
-        if (SaveManager.Instance == null)
-        {
-            GameObject saveManagerObj = new GameObject("SaveManager");
-
-            saveManagerObj.AddComponent<SaveManager>();
-            saveManagerObj.transform.SetParent(transform);
-        }
-
-
-        // SceneLoader
-        if (SceneLoader.Instance == null)
-        {
-            GameObject sceneLoaderObj = new GameObject("SceneLoader");
-
-            sceneLoaderObj.AddComponent<SceneLoader>();
-            sceneLoaderObj.transform.SetParent(transform);
-        }
-
+        CreateIfMissing(GameEventBus.Instance, gameEventBusPrefab, "GameEventBus", typeof(GameEventBus));
+        CreateIfMissing(InputManager.Instance, inputManagerPrefab, "InputManager", typeof(InputManager));
+        CreateIfMissing(GameManager.Instance, gameManagerPrefab, "GameManager", typeof(GameManager));
+        CreateIfMissing(SaveManager.Instance, saveManagerPrefab, "SaveManager", typeof(SaveManager));
+        CreateIfMissing(SceneLoader.Instance, sceneLoaderPrefab, "SceneLoader", typeof(SceneLoader));
+        CreateIfMissing(MultiplayerController.Instance, multiplayerControllerPrefab, "MultiplayerController", typeof(MultiplayerController));
     }
 
 
+    private void CreateIfMissing(Object instance, GameObject prefab, string name, System.Type type)
+    {
+        if (instance != null)
+        {
+            return;
+        }
+
+        GameObject go = prefab != null ? Instantiate(prefab, transform) : new GameObject(name, type);
+
+        go.transform.SetParent(transform);
+    }
+
+
+        // -----------------------------
+        // SERVICE REGISTRATION
+        // -----------------------------
     private void RegisterServices()
     {
-        ServiceLocator.Instance.RegisterService(GameEventBus.Instance);
-        ServiceLocator.Instance.RegisterService(InputManager.Instance);
-        ServiceLocator.Instance.RegisterService(GameManager.Instance);
-        ServiceLocator.Instance.RegisterService(SaveManager.Instance);
-        ServiceLocator.Instance.RegisterService(SceneLoader.Instance);
+        var locator = ServiceLocator.Instance;
+
+        locator.RegisterService(GameEventBus.Instance);
+        locator.RegisterService(InputManager.Instance);
+        locator.RegisterService(GameManager.Instance);
+        locator.RegisterService(SaveManager.Instance);
+        locator.RegisterService(SceneLoader.Instance);
+
+        Debug.Log("🔥 Services registered");
     }
 }
